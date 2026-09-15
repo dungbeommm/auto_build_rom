@@ -1,6 +1,24 @@
 #!/usr/bin/env bash
-set -e; f="$1";o="$2";mkdir -p "$o";b="$(basename "$f")";split -b 1900m -d -a3 "$f" "$o/$b.part-";sha256sum "$o"/*>"$o/SHA256SUMS";cp "$f.sha256" "$o/";cat >"$o/JOIN.sh" <<EOF
+set -Eeuo pipefail
+file="${1:?Usage: split_release.sh ROM.tgz OUTPUT_DIR}"
+out="${2:?Usage: split_release.sh ROM.tgz OUTPUT_DIR}"
+[[ -f "$file" ]] || { echo "ROM output not found: $file" >&2; exit 2; }
+rm -rf "$out"
+mkdir -p "$out"
+base="$(basename "$file")"
+split -b 1900m -d -a 3 "$file" "$out/$base.part-"
+(
+  cd "$out"
+  sha256sum "$base.part-"* > SHA256SUMS
+)
+cp "$file.sha256" "$out/$base.sha256"
+cat > "$out/JOIN.sh" <<EOF
 #!/usr/bin/env bash
-cat '$b.part-'*>'$b'; sha256sum -c '$b.sha256'
+set -Eeuo pipefail
+cd "\$(dirname "\$0")"
+sha256sum -c SHA256SUMS
+cat '$base.part-'* > '$base'
+sha256sum -c '$base.sha256'
+echo 'Created: $base'
 EOF
-chmod +x "$o/JOIN.sh"
+chmod +x "$out/JOIN.sh"

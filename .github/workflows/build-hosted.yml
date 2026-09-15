@@ -17,10 +17,67 @@ jobs:
     timeout-minutes: 360
     steps:
       - uses: actions/checkout@v4
+      - name: Verify repository layout
+        run: |
+          required=(
+            scripts/extract_request.py
+            scripts/validate_url.py
+            scripts/pipeline.sh
+            scripts/patch_engine.py
+            scripts/split_release.sh
+            profiles/all.env
+            vendor/android-image-tools/android_image_tools.sh
+          )
+          missing=0
+          for file in "${required[@]}"; do
+            if [[ ! -f "$file" ]]; then
+              echo "::error file=$file::Missing required repository file"
+              missing=1
+            fi
+          done
+          if (( missing )); then
+            echo 'Upload the CONTENTS of ROM-Auto-Modder-GitHub-Hosted-v3.zip to the repository root.'
+            exit 2
+          fi
+          chmod +x scripts/*.sh scripts/*.py vendor/android-image-tools/android_image_tools.sh
+      - name: Free disk before resizing
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/.ghcup || true
+          sudo rm -rf /opt/hostedtoolcache/CodeQL || true
+          sudo docker system prune --all --force --volumes || true
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+          df -h
       - uses: easimon/maximize-build-space@master
-        with: {root-reserve-mb: 4096,swap-size-mb: 2048,remove-dotnet: 'true',remove-android: 'true',remove-haskell: 'true'}
-      - name: Install dependencies
-        run: sudo apt-get update && sudo apt-get install -y erofs-utils e2fsprogs android-sdk-libsparse-utils fuse2fs attr jq
+        with:
+          root-reserve-mb: 8192
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+      - name: Install minimal dependencies
+        run: |
+          # Disable large third-party indexes that are irrelevant to this build.
+          sudo rm -f /etc/apt/sources.list.d/google-chrome.list \
+                     /etc/apt/sources.list.d/microsoft-prod.list \
+                     /etc/apt/sources.list.d/azure-cli.list || true
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+          sudo mkdir -p /var/lib/apt/lists/partial /var/cache/apt/archives/partial
+          sudo apt-get \
+            -o Acquire::Languages=none \
+            -o Dir::Cache::pkgcache= \
+            -o Dir::Cache::srcpkgcache= \
+            update
+          sudo apt-get install -y --no-install-recommends \
+            erofs-utils e2fsprogs android-sdk-libsparse-utils fuse2fs \
+            fuse3 attr jq rsync pv file
+          required_tools=(mkfs.erofs erofsfuse mkfs.ext4 e2fsck resize2fs simg2img fuse2fs rsync getfattr)
+          for tool in "${required_tools[@]}"; do command -v "$tool" >/dev/null || { echo "Missing tool: $tool"; exit 2; }; done
+          sudo apt-get clean
+          sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
+          df -h
       - id: request
         env: {INPUT_ROM_URL: '${{ inputs.rom_url }}'}
         run: python3 scripts/extract_request.py
