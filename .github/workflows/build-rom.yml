@@ -1,0 +1,72 @@
+name: Build modded ROM
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url: {description: 'HTTPS URL của Xiaomi Fastboot ROM (.tgz)', required: true, type: string}
+      profile: {description: 'Profile trong profiles/', required: true, default: 'all', type: string}
+      keep_work: {description: 'Giữ thư mục tạm để debug', required: false, default: false, type: boolean}
+  issues: {types: [opened]}
+  issue_comment: {types: [created]}
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: rom-mod-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  authorize:
+    runs-on: ubuntu-latest
+    outputs: {allowed: '${{ steps.auth.outputs.allowed }}', rom_url: '${{ steps.req.outputs.rom_url }}', profile: '${{ steps.req.outputs.profile }}'}
+    steps:
+      - uses: actions/checkout@v4
+      - id: auth
+        env:
+          EVENT: ${{ github.event_name }}
+          ASSOC: ${{ github.event.comment.author_association || github.event.issue.author_association || 'OWNER' }}
+          BODY: ${{ github.event.comment.body || github.event.issue.body || '' }}
+        run: |
+          allowed=false
+          if [[ "$EVENT" == workflow_dispatch ]]; then allowed=true
+          elif [[ "$BODY" == *'/mod-rom '* ]] && [[ "$ASSOC" =~ ^(OWNER|MEMBER|COLLABORATOR)$ ]]; then allowed=true; fi
+          echo "allowed=$allowed" >> "$GITHUB_OUTPUT"
+      - id: req
+        if: steps.auth.outputs.allowed == 'true'
+        env:
+          INPUT_ROM_URL: ${{ inputs.rom_url }}
+          INPUT_PROFILE: ${{ inputs.profile || 'all' }}
+        run: python3 scripts/extract_request.py
+
+  build:
+    needs: authorize
+    if: needs.authorize.outputs.allowed == 'true'
+    runs-on: [self-hosted, android, arm64, tool-tree]
+    timeout-minutes: 720
+    env:
+      ROM_URL: ${{ needs.authorize.outputs.rom_url }}
+      PATCH_PROFILE: ${{ github.workspace }}/profiles/${{ needs.authorize.outputs.profile }}.env
+      KEEP_WORK: ${{ inputs.keep_work && '1' || '0' }}
+      OUTPUT_DIR: ${{ github.workspace }}/output
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate profile
+        run: test -f "$PATCH_PROFILE" && case "$PATCH_PROFILE" in "$GITHUB_WORKSPACE"/profiles/*.env) ;; *) exit 2;; esac
+      - name: Build modded ROM
+        run: ./scripts/rom_pipeline.sh
+      - name: Split release assets
+        run: |
+          rom="$(find output -maxdepth 1 -name '*_MODDED.tgz' -type f -print -quit)"
+          ./scripts/split_release.sh "$rom" release-parts
+      - name: Publish GitHub Release
+        id: release
+        run: |
+          tag="rom-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" release-parts/* --title "Modded ROM $tag" --notes "Tạo tự động từ Tool-Tree Patch ROM. Đọc manifest và kiểm tra SHA-256 trước khi flash."
+          echo "url=$(gh release view "$tag" --json url -q .url)" >> "$GITHUB_OUTPUT"
+      - name: Reply to issue
+        if: github.event.issue.number
+        run: |
+          gh issue comment "${{ github.event.issue.number }}" --body "ROM đã mod: ${{ steps.release.outputs.url }}\n\nTải tất cả part, chạy JOIN_ROM.sh rồi kiểm tra SHA-256 trước khi flash."
