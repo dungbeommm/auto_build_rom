@@ -1,66 +1,58 @@
-# ROM Auto Modder for Tool-Tree
+# ROM Auto Modder — GitHub Hosted
 
-Dự án GitHub tự nhận liên kết ROM Xiaomi Fastboot (`.tgz`), tải ROM, giải nén các phân vùng cần thiết, gọi **engine Patch ROM của Tool-Tree**, đóng gói lại và phát hành ROM đã mod.
+Bản viết lại chạy trực tiếp trên `ubuntu-latest`, không cần self-hosted runner, Android root hay cài Tool-Tree trên điện thoại.
 
-> ROM mẫu đã xác minh: `houji_images_OS3.0.305.0.WNCCNXM_20260727.0000.00_16.0_cn_545a3c8afe.tgz` (~9,62 GB).
+## Luồng hoạt động
 
-## Tính năng
+1. Nhận URL Xiaomi Fastboot ROM `.tgz` từ `workflow_dispatch` hoặc Issue `/mod-rom URL`.
+2. Dọn dung lượng runner, tải và giải nén ROM.
+3. Tự nhận diện `super.img` hoặc các image rời.
+4. Unpack EROFS/EXT4, áp dụng profile tính năng, repack image/super.
+5. Đóng gói `.tgz`, tạo manifest/SHA-256, chia part và phát hành GitHub Release.
 
-- Tự bắt URL ROM từ **GitHub Issue**, bình luận Issue hoặc `workflow_dispatch`.
-- Hỗ trợ tiếp tục tải (`curl -C -`) và kiểm tra URL/host/kích thước/dung lượng trống.
-- Unpack: `system`, `system_ext`, `product`, `vendor`, `mi_ext`, `boot`, `vendor_boot` khi tồn tại.
-- Áp dụng 7 nhóm vá: framework, ROM CN, bàn phím nâng cao, các bản vá khác, ứng dụng, thêm ứng dụng, `boot/vendor_boot`.
-- Repack các image, thay vào cây Fastboot ROM, tạo `.tgz`, SHA-256 và manifest.
-- Tự chia ROM thành phần nhỏ hơn 2 GB để tải lên GitHub Release; kèm script ghép lại.
-- Có khóa chống SSRF và chỉ cho phép OWNER/MEMBER/COLLABORATOR kích hoạt từ Issue.
+## Chạy
 
-## Yêu cầu bắt buộc
+Vào **Actions → Build hosted ROM → Run workflow**, dán URL ROM và bấm **Run workflow**. Không cần cấu hình runner.
 
-Engine `patch-rom` gốc là **ELF Android ARM64** với interpreter `/system/bin/linker64`; vì vậy job vá thật phải chạy trên **self-hosted GitHub Actions runner đặt trên Android ARM64 đã root**, có Tool-Tree được cài/khởi tạo. Không thể chạy engine này trên runner Ubuntu x86_64 của GitHub.
-
-Khuyến nghị:
-
-- Android ARM64 đã root, trống ít nhất **50–80 GB**.
-- Tool-Tree 1.6.x đã mở ít nhất một lần.
-- Runner có nhãn: `self-hosted`, `android`, `arm64`, `tool-tree`.
-- Có `bash`, `curl`, `tar`, `gzip`, `find`, `sha256sum`, `split`, `gh`.
-- Biến runner `TOOLTREE_HOME=/data/data/com.tool.tree/files/home` nếu dùng đường dẫn khác.
-
-Xem [docs/SETUP_RUNNER.md](docs/SETUP_RUNNER.md).
-
-## Cách dùng
-
-### GitHub Issue
-
-Tạo Issue hoặc bình luận bằng nội dung:
+Hoặc tạo Issue:
 
 ```text
-/mod-rom https://example.com/device_images_xxx.tgz
+/mod-rom https://example.com/device_images_version.tgz
 ```
 
-Có thể thêm profile:
+Chỉ OWNER/MEMBER/COLLABORATOR được phép kích hoạt bằng Issue.
+
+## Logic tính năng
+
+Giữ cấu trúc 7 nhóm của Tool-Tree trong `profiles/all.env` và engine rule-based `scripts/patch_engine.py`:
+
+- Framework/property patches.
+- CN ROM/property and XML cleanup.
+- Keyboard package/overlay hooks.
+- Other restrictions and FPS/property patches.
+- App patch hook directory.
+- Add system apps from `assets/apps/<partition>/`.
+- Boot/vendor_boot hook.
+
+### Giới hạn trung thực
+
+`patch-rom` gốc là ELF Android ARM64 đóng/strip, không có mã nguồn quy tắc smali và không thể chạy nguyên bản trên Ubuntu x86. Bản hosted giữ **pipeline, feature flags và các rule công khai có thể tái tạo**, nhưng không giả vờ sao chép byte-for-byte các vá APK/JAR kín. Các rule không thể tái tạo được ghi `unsupported` trong `patch-report.json`; bạn có thể thêm rule hoặc APK vào thư mục plugin mà không đổi workflow.
+
+## ROM lớn
+
+ROM mẫu khoảng 9,62 GB. Workflow dùng `maximize-build-space`, xử lý có kiểm soát dung lượng và chia Release thành part 1.9 GB. GitHub-hosted runner vẫn có thể hết dung lượng với ROM sau giải nén quá lớn; khi đó dùng runner dung lượng lớn của GitHub hoặc giảm `TARGET_PARTITIONS`.
+
+## Thêm ứng dụng
+
+Đặt APK theo cấu trúc:
 
 ```text
-/mod-rom https://example.com/device_images_xxx.tgz profile=all
+assets/apps/product/YourApp/YourApp.apk
+assets/apps/system_ext/AnotherApp/AnotherApp.apk
 ```
 
-### Chạy thủ công
+Engine sẽ chép vào `app/` của phân vùng tương ứng và ghi báo cáo.
 
-Vào **Actions → Build modded ROM → Run workflow**, nhập `rom_url` và profile `all`.
+## An toàn
 
-### Chạy cục bộ trên thiết bị Android
-
-```bash
-export ROM_URL='https://example.com/device_images_xxx.tgz'
-export PATCH_PROFILE=profiles/all.env
-export TOOLTREE_HOME=/data/data/com.tool.tree/files/home
-./scripts/rom_pipeline.sh
-```
-
-## Cảnh báo
-
-- Sao lưu và kiểm tra ROM trên thiết bị thử nghiệm. Vá framework/boot sai có thể gây bootloop hoặc mất dữ liệu.
-- Thiết bị MTK có thể treo khi vá `boot/vendor_boot`.
-- ROM đầu ra không mang chữ ký OTA chính thức và thường chỉ phù hợp để flash bằng Fastboot/recovery tùy chỉnh.
-- Dự án không tự vượt khóa bootloader, AVB hoặc cơ chế bảo vệ thiết bị.
-- Mã Tool-Tree được giữ nguyên giấy phép và nguồn gốc trong `vendor/tool-tree/patch_rom`.
+ROM mod không còn chữ ký OTA chính thức. Kiểm tra manifest và SHA-256; thử trên thiết bị phụ. Vá image sai có thể bootloop hoặc mất dữ liệu.

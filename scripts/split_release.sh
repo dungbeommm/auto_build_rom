@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
-set -Eeuo pipefail
-file="${1:?Usage: split_release.sh ROM.tgz [output-dir]}"; out="${2:-release-parts}"
-mkdir -p "$out"; base="$(basename "$file")"
-split -b 1900m -d -a 3 "$file" "$out/$base.part-"
-sha256sum "$out/$base.part-"* > "$out/SHA256SUMS"
-cat > "$out/JOIN_ROM.sh" <<EOF
+set -e; f="$1";o="$2";mkdir -p "$o";b="$(basename "$f")";split -b 1900m -d -a3 "$f" "$o/$b.part-";sha256sum "$o"/*>"$o/SHA256SUMS";cp "$f.sha256" "$o/";cat >"$o/JOIN.sh" <<EOF
 #!/usr/bin/env bash
-set -e
-cat '$base.part-'* > '$base'
-sha256sum -c SHA256SUMS
-echo 'Đã ghép: $base'
+cat '$b.part-'*>'$b'; sha256sum -c '$b.sha256'
 EOF
-chmod +x "$out/JOIN_ROM.sh"; cp -f "$file.sha256" "$file.manifest.json" "$out/" 2>/dev/null || true
+chmod +x "$o/JOIN.sh"

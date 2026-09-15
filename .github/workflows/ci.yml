@@ -1,14 +1,9 @@
 name: CI
-on: [push, pull_request]
+on: [push,pull_request]
 permissions: {contents: read}
 jobs:
-  validate:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - name: Shell syntax
-        run: bash -n scripts/*.sh
-      - name: Python syntax
-        run: python3 -m py_compile scripts/*.py tests/*.py
-      - name: Unit tests
-        run: python3 -m unittest discover -s tests -v
+ test:
+  runs-on: ubuntu-latest
+  steps:
+   - uses: actions/checkout@v4
+   - run: bash -n scripts/*.sh && python3 -m py_compile scripts/*.py

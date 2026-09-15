@@ -1,0 +1,43 @@
+name: Build hosted ROM
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url: {description: 'HTTPS Fastboot ROM .tgz URL',required: true,type: string}
+  issues: {types: [opened]}
+  issue_comment: {types: [created]}
+permissions: {contents: write,issues: write}
+concurrency: {group: 'rom-${{ github.event.issue.number || github.run_id }}',cancel-in-progress: false}
+jobs:
+  build:
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      ((github.event.issue.author_association == 'OWNER' || github.event.issue.author_association == 'MEMBER' || github.event.issue.author_association == 'COLLABORATOR') && contains(github.event.issue.body, '/mod-rom ')) ||
+      ((github.event.comment.author_association == 'OWNER' || github.event.comment.author_association == 'MEMBER' || github.event.comment.author_association == 'COLLABORATOR') && contains(github.event.comment.body, '/mod-rom '))
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    steps:
+      - uses: actions/checkout@v4
+      - uses: easimon/maximize-build-space@master
+        with: {root-reserve-mb: 4096,swap-size-mb: 2048,remove-dotnet: 'true',remove-android: 'true',remove-haskell: 'true'}
+      - name: Install dependencies
+        run: sudo apt-get update && sudo apt-get install -y erofs-utils e2fsprogs android-sdk-libsparse-utils fuse2fs attr jq
+      - id: request
+        env: {INPUT_ROM_URL: '${{ inputs.rom_url }}'}
+        run: python3 scripts/extract_request.py
+      - name: Build ROM
+        env: {ROM_URL: '${{ steps.request.outputs.rom_url }}'}
+        run: ./scripts/pipeline.sh
+      - name: Split assets
+        run: rom="$(find output -name '*_MODDED.tgz' -print -quit)"; ./scripts/split_release.sh "$rom" release
+      - name: Release
+        id: release
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          tag="rom-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          gh release create "$tag" release/* output/patch-report.json --title "$tag" --notes 'Hosted build; inspect patch-report.json before flashing.'
+          echo "url=$(gh release view "$tag" --json url -q .url)" >> "$GITHUB_OUTPUT"
+      - name: Reply
+        if: github.event.issue.number
+        env: {GH_TOKEN: '${{ github.token }}'}
+        run: |
+          gh issue comment '${{ github.event.issue.number }}' --body 'ROM: ${{ steps.release.outputs.url }}'

@@ -1,6 +1,5 @@
 output/
-release-parts/
+release/
 *.tgz
-*.tar.gz
 __pycache__/
 *.pyc
