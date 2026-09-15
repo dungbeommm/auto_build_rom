@@ -5,35 +5,57 @@ import re
 import sys
 import urllib.parse
 
+ALLOWED = (
+    "aliyuncs.com",
+    "bigota.d.miui.com",
+    "hugeota.d.miui.com",
+    "cdn-ota.azureedge.net",
+    "github.com",
+    "githubusercontent.com",
+)
 
-def event_body() -> str:
-    event_path = os.getenv("GITHUB_EVENT_PATH", "")
-    if not event_path or not os.path.isfile(event_path):
+
+def validate(url: str, *, optional: bool = False) -> str:
+    url = url.strip()
+    if optional and not url:
         return ""
-    with open(event_path, encoding="utf-8") as handle:
-        event = json.load(handle)
-    source = event.get("comment") or event.get("issue") or {}
-    return source.get("body", "") or ""
+    if "\r" in url or "\n" in url:
+        raise SystemExit("URL contains a newline")
+    parsed = urllib.parse.urlparse(url)
+    host = (parsed.hostname or "").rstrip(".").lower()
+    if parsed.scheme != "https" or parsed.username or parsed.password or parsed.port not in (None, 443):
+        raise SystemExit("Only HTTPS URLs on port 443 are accepted")
+    if not any(host == suffix or host.endswith("." + suffix) for suffix in ALLOWED):
+        raise SystemExit(f"Host not allowed: {host}")
+    if not parsed.path.lower().endswith((".zip", ".tgz", ".tar.gz", ".bin")):
+        raise SystemExit("ROM must be .zip, .tgz, .tar.gz, or payload .bin")
+    return url
 
 
 def main() -> int:
-    url = os.getenv("INPUT_ROM_URL", "").strip()
-    if not url:
-        match = re.search(r"(?im)^\s*/mod-rom\s+(https://\S+)", event_body())
-        url = match.group(1).rstrip(".,;)]") if match else ""
-    if "\n" in url or "\r" in url:
-        raise SystemExit("URL không được chứa ký tự xuống dòng")
-    parsed = urllib.parse.urlparse(url)
-    if parsed.scheme != "https" or not parsed.hostname:
-        raise SystemExit("Cần URL HTTPS hợp lệ")
-    if not re.search(r"\.(?:tgz|tar\.gz)$", parsed.path, re.IGNORECASE):
-        raise SystemExit("URL phải trỏ tới tệp .tgz hoặc .tar.gz")
+    stock = os.getenv("INPUT_STOCK_URL", "").strip()
+    port = os.getenv("INPUT_PORT_URL", "").strip()
+    event_path = os.getenv("GITHUB_EVENT_PATH", "")
+    body = ""
+    if event_path and os.path.isfile(event_path):
+        with open(event_path, encoding="utf-8") as handle:
+            event = json.load(handle)
+        body = ((event.get("comment") or event.get("issue") or {}).get("body") or "")
+    if not stock:
+        match = re.search(r"(?im)^\s*/mod-rom\s+(https://\S+)", body)
+        stock = match.group(1).rstrip(".,;)]") if match else ""
+    if not port:
+        match = re.search(r"(?i)\bport=(https://\S+)", body)
+        port = match.group(1).rstrip(".,;)]") if match else ""
+    stock = validate(stock)
+    port = validate(port, optional=True)
     output = os.getenv("GITHUB_OUTPUT")
+    text = f"stock_url={stock}\nport_url={port}\n"
     if output:
         with open(output, "a", encoding="utf-8") as handle:
-            handle.write(f"rom_url={url}\n")
+            handle.write(text)
     else:
-        print(url)
+        print(text, end="")
     return 0
 
 

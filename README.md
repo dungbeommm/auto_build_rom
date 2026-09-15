@@ -1,58 +1,58 @@
-# ROM Auto Modder — GitHub Hosted
+# ToolTree HyperOS AutoBuilder
 
-Bản viết lại chạy trực tiếp trên `ubuntu-latest`, không cần self-hosted runner, Android root hay cài Tool-Tree trên điện thoại.
+Bản viết lại dùng kiến trúc Python của **HyperOS-Port-Python**, thay cho chuỗi shell phụ thuộc Android runner. Dự án chạy trực tiếp trên GitHub-hosted `ubuntu-24.04`.
 
-## Luồng hoạt động
+## Các nhóm tính năng
 
-1. Nhận URL Xiaomi Fastboot ROM `.tgz` từ `workflow_dispatch` hoặc Issue `/mod-rom URL`.
-2. Dọn dung lượng runner, tải và giải nén ROM.
-3. Tự nhận diện `super.img` hoặc các image rời.
-4. Unpack EROFS/EXT4, áp dụng profile tính năng, repack image/super.
-5. Đóng gói `.tgz`, tạo manifest/SHA-256, chia part và phát hành GitHub Release.
+- Tải ROM bằng aria2: tiếp tục file dở, nhiều kết nối, cache tên file.
+- Đọc Xiaomi Fastboot `.tgz`/`.tar.gz`/`.zip`, OTA `payload.bin`, ZIP chứa payload và thư mục ROM đã giải nén.
+- Giải `super.img`, sparse/split sparse, EROFS/EXT4; nhận phân vùng `_a`.
+- Vá `framework.jar`, `services.jar`, `miui-services.jar` bằng smali; bỏ kiểm tra chữ ký/hạ cấp theo engine có sẵn.
+- Vá ứng dụng theo plugin: Settings, SecurityCenter, Installer, PowerKeeper, Joyose, HTMLViewer, overlay thiết bị.
+- Mở khóa feature XML/build.prop, CN/global/EU localization, file replacement và thêm app qua cấu hình.
+- Xử lý firmware, `boot.img`, `vendor_boot.img`, AVB, repack `super` hoặc `payload`.
+- Preflight, snapshot/cache/diff report và release manifest SHA-256.
 
-## Chạy
+> Một ROM đã sửa có thể không boot nếu cấu hình thiết bị, kích thước super hoặc AVB không phù hợp. Luôn mở khóa bootloader và giữ ROM gốc để khôi phục.
 
-Vào **Actions → Build hosted ROM → Run workflow**, dán URL ROM và bấm **Run workflow**. Không cần cấu hình runner.
+## Cách dùng trên GitHub
 
-Hoặc tạo Issue:
+1. Tạo repository mới và tải toàn bộ nội dung dự án này lên **đúng thư mục gốc**.
+2. Mở **Actions → Build modified HyperOS ROM → Run workflow**.
+3. Dán `stock_url`. Để trống `port_url` nếu chỉ muốn sửa ROM chính thức.
+4. Chọn `super` (gói hybrid flash) hoặc `payload`.
+5. Tải các part trong Release, đặt cùng thư mục và chạy `python JOIN.py`.
 
-```text
-/mod-rom https://example.com/device_images_version.tgz
-```
-
-Chỉ OWNER/MEMBER/COLLABORATOR được phép kích hoạt bằng Issue.
-
-## Logic tính năng
-
-Giữ cấu trúc 7 nhóm của Tool-Tree trong `profiles/all.env` và engine rule-based `scripts/patch_engine.py`:
-
-- Framework/property patches.
-- CN ROM/property and XML cleanup.
-- Keyboard package/overlay hooks.
-- Other restrictions and FPS/property patches.
-- App patch hook directory.
-- Add system apps from `assets/apps/<partition>/`.
-- Boot/vendor_boot hook.
-
-### Giới hạn trung thực
-
-`patch-rom` gốc là ELF Android ARM64 đóng/strip, không có mã nguồn quy tắc smali và không thể chạy nguyên bản trên Ubuntu x86. Bản hosted giữ **pipeline, feature flags và các rule công khai có thể tái tạo**, nhưng không giả vờ sao chép byte-for-byte các vá APK/JAR kín. Các rule không thể tái tạo được ghi `unsupported` trong `patch-report.json`; bạn có thể thêm rule hoặc APK vào thư mục plugin mà không đổi workflow.
-
-## ROM lớn
-
-ROM mẫu khoảng 9,62 GB. Workflow dùng `maximize-build-space`, xử lý có kiểm soát dung lượng và chia Release thành part 1.9 GB. GitHub-hosted runner vẫn có thể hết dung lượng với ROM sau giải nén quá lớn; khi đó dùng runner dung lượng lớn của GitHub hoặc giảm `TARGET_PARTITIONS`.
-
-## Thêm ứng dụng
-
-Đặt APK theo cấu trúc:
+Cũng có thể bình luận trong Issue:
 
 ```text
-assets/apps/product/YourApp/YourApp.apk
-assets/apps/system_ext/AnotherApp/AnotherApp.apk
+/mod-rom https://.../rom.tgz
 ```
 
-Engine sẽ chép vào `app/` của phân vùng tương ứng và ghi báo cáo.
+Port hai ROM:
 
-## An toàn
+```text
+/mod-rom https://.../stock.tgz port=https://.../port.zip
+```
 
-ROM mod không còn chữ ký OTA chính thức. Kiểm tra manifest và SHA-256; thử trên thiết bị phụ. Vá image sai có thể bootloop hoặc mất dữ liệu.
+## Chạy cục bộ
+
+Yêu cầu Linux x86_64, Python 3.11+, Java, khoảng 40–80 GiB trống.
+
+```bash
+python -m pip install -r requirements.txt
+chmod +x bin/linux/x86_64/* bin/flash/zstd
+export PATH="$PWD/bin/linux/x86_64:$PWD/bin/flash:$PATH"
+python main.py --stock 'https://.../rom.tgz' --pack-type super --fs-type erofs --clean \
+  --enable-diff-report --diff-report build/diff-report.json
+```
+
+## Cấu hình
+
+- `devices/common/features.json`: feature XML và build.prop.
+- `devices/common/replacements.json`: thay thế/copy ứng dụng và tài nguyên.
+- `devices/common/config.json`: kiểu pack, filesystem và các override chung.
+- `devices/<codename>/`: ghi đè riêng cho thiết bị.
+- `src/core/modifiers/plugins/`: plugin hệ thống/APK.
+
+Dự án giữ giấy phép gốc tại `LICENSE` và bổ sung thay đổi tương thích TGZ/GitHub Actions.
