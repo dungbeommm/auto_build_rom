@@ -48,15 +48,6 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
           df -h
-      - uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
-          remove-codeql: 'true'
-          remove-docker-images: 'true'
       - name: Install minimal dependencies
         run: |
           # Disable large third-party indexes that are irrelevant to this build.
@@ -78,6 +69,24 @@ jobs:
           sudo apt-get clean
           sudo rm -rf /var/lib/apt/lists/* /var/cache/apt/archives/*
           df -h
+      # Resize only after APT has finished. On current Ubuntu runners, running
+      # apt-get after this action can leave /var with no writable space.
+      - uses: easimon/maximize-build-space@master
+        with:
+          root-reserve-mb: 8192
+          swap-size-mb: 1024
+          remove-dotnet: 'true'
+          remove-android: 'true'
+          remove-haskell: 'true'
+          remove-codeql: 'true'
+          remove-docker-images: 'true'
+      - name: Verify build volume after resizing
+        run: |
+          df -h
+          test "$(df -Pk "$GITHUB_WORKSPACE" | awk 'NR==2 {print $4}')" -ge 25000000 || {
+            echo '::error::Build volume has less than 25 GB free after resizing.'
+            exit 2
+          }
       - id: request
         env: {INPUT_ROM_URL: '${{ inputs.rom_url }}'}
         run: python3 scripts/extract_request.py

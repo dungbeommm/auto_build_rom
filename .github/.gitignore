@@ -1,5 +1,0 @@
-output/
-release/
-*.tgz
-__pycache__/
-*.pyc
