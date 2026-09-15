@@ -1,0 +1,1 @@
+Android image tooling is vendored from ravindu644/Android_Image_Tools (MIT). Tool-Tree feature layout is referenced for compatibility; its closed Android patch binary is not bundled or represented as native Linux code.
