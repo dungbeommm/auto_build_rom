@@ -1,0 +1,58 @@
+name: ROM Auto Builder
+on:
+  workflow_dispatch:
+    inputs:
+      rom_url:
+        description: 'Direct ROM ZIP URL (optional; upload is also supported)'
+        required: false
+        type: string
+      features:
+        description: 'Comma-separated feature IDs'
+        required: true
+        default: 'reboot_menu'
+        type: string
+      strict:
+        description: 'Fail on missing target / missing exact recipe'
+        required: true
+        default: true
+        type: boolean
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: '3.12'}
+      - name: System tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y openjdk-17-jre-headless zipalign android-sdk-build-tools e2fsprogs erofs-utils
+      - name: Download ROM
+        if: inputs.rom_url != ''
+        run: curl -L --fail --retry 4 -o workspace/input/rom.zip "${{ inputs.rom_url }}"
+      - name: Run planner
+        env:
+          FEATURES: ${{ inputs.features }}
+        run: |
+          IFS=',' read -ra F <<< "$FEATURES"
+          args=()
+          for x in "${F[@]}"; do args+=(--feature "$x"); done
+          ./scripts/run.sh list-mods >/dev/null
+          test -f workspace/input/rom.zip
+          ./scripts/run.sh plan workspace/input/rom.zip "${args[@]}"
+      - name: Patch
+        env:
+          FEATURES: ${{ inputs.features }}
+          STRICT: ${{ inputs.strict }}
+        run: |
+          IFS=',' read -ra F <<< "$FEATURES"
+          args=()
+          for x in "${F[@]}"; do args+=(--feature "$x"); done
+          if [ "$STRICT" = "true" ]; then ./scripts/run.sh patch workspace/input/rom.zip "${args[@]}"; else ./scripts/run.sh patch workspace/input/rom.zip --best-effort "${args[@]}"; fi
+      - name: Upload workspace
+        uses: actions/upload-artifact@v4
+        with:
+          name: rom-builder-workspace
+          path: workspace/

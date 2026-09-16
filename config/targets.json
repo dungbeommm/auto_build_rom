@@ -1,0 +1,22 @@
+{
+  "apk": {
+    "miui_systemui": {"patterns": ["MiuiSystemUI.apk"], "features": ["fix_delayed_notifications", "reboot_menu", "advanced_keyboard"]},
+    "power_keeper": {"patterns": ["PowerKeeper.apk"], "features": ["fix_delayed_notifications", "unlock_fps"]},
+    "settings": {"patterns": ["Settings.apk"], "features": ["show_device_information", "show_google_location_privacy", "show_notification_icons", "advanced_keyboard"]},
+    "frequent_phrase": {"patterns": ["*FrequentPhrase.apk"], "features": ["advanced_keyboard"]},
+    "external_storage_provider": {"patterns": ["ExternalStorageProvider.apk"], "features": ["unlock_android_data_obb"]},
+    "theme_manager": {"patterns": ["*ThemeManager.apk"], "features": ["theme_store_purchases"]},
+    "personal_assistant": {"patterns": ["*PersonalAssistant*.apk"], "features": ["app_vault_purchases"]},
+    "weather": {"patterns": ["MIUIWeather.apk", "*Weather.apk"], "features": ["aqi_weather_cn"]},
+    "joyose": {"patterns": ["Joyose.apk"], "features": ["joyose_mod"]},
+    "gallery": {"patterns": ["MIUIGallery.apk", "*Gallery.apk"], "features": ["hide_china_gallery_map"]},
+    "provision": {"patterns": ["Provision.apk", "*Provision.apk"], "features": ["enable_gms_provision"]},
+    "security_center": {"patterns": ["*SecurityCenter.apk"], "features": ["remove_10s_show_data_disable_apps"]}
+  },
+  "jar": {
+    "framework": {"patterns": ["framework.jar"], "features": ["disable_apk_signature_verification", "kaorios_toolbox"]},
+    "services": {"patterns": ["services.jar"], "features": ["disable_apk_signature_verification", "unlock_screenshot", "lockscreen_error"]},
+    "miui_framework": {"patterns": ["miui-framework.jar"], "features": ["fix_delayed_notifications", "theme_reset", "font_fix", "unlock_window", "advanced_keyboard"]},
+    "miui_services": {"patterns": ["miui-services.jar"], "features": ["disable_apk_signature_verification", "remove_enforce_version_policy", "dark_app_list", "remove_open_app_notification", "camera_60hz", "unlock_window", "setupwizard"]}
+  }
+}

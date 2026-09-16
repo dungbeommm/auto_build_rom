@@ -1,78 +1,61 @@
-# ROM Auto Builder — HyperOS / Xiaomi ROM GitHub Actions
+# ROM-Auto-Builder
 
-Tool tự động hóa ROM theo pipeline:
+Linux-first ROM modification orchestrator based on the target/dependency declarations from the supplied `Tool-Tree-main` reference.
 
-`URL ROM -> download -> preflight -> unpack -> port/sync -> framework/APK patch -> boot/vendor_boot patch -> rebuild EROFS/ext4 -> super.img hoặc payload -> report + artifact`
+## Scope
 
-Engine này lấy phần porting/unpack/repack từ bộ HyperOS-Port-Python bạn cung cấp và thêm một lớp Python `romauto` để điều phối profile, patch và GitHub Actions. Tool-Tree được lấy từ upstream theo tag để có các binary unpack/repack cần thiết thay vì nhúng binary khổng lồ vào repository.
+Included:
+- ROM ZIP / `super.img` / extracted directory discovery
+- `super.img` partition extraction through `lpunpack`
+- Dependency-aware target selection
+- Exact target registry for APK/JAR files used by the reference patch UI
+- APK decode/build through Apktool
+- JAR DEX decode/build through Baksmali/Smali
+- Fail-closed recipe engine: no guessed bytecode edits
+- Checkpoint state and logs
+- GitHub Actions workflow
+- Verification of rebuilt APK/JAR/ZIP archives
 
-## GitHub Actions
+Excluded by design:
+- ROM porting
+- `boot.img` patching
+- `vendor_boot.img` patching
+- fake locked bootloader
+- boot SELinux patching
+- Wi-Fi hacking addon
 
-Vào **Actions → Build ROM → Run workflow** rồi nhập:
+## Important accuracy rule
 
-- `stock_url`: URL trực tiếp tới ROM stock.
-- `port_url`: URL trực tiếp tới ROM port; bỏ trống để chạy official-modification mode.
-- `profile`: file JSON profile, ví dụ `config/profiles/default.json`.
-- `pack_type`: `super` hoặc `payload`.
-- `fs_type`: `erofs` hoặc `ext4`.
-- `device`: mã máy nếu muốn khóa profile thiết bị.
+The supplied reference exposes the exact target/dependency list in `patch_rom/index.bash`, but the actual patch implementation is compiled into the Android AArch64 binary `patch-rom`. The new engine therefore refuses to invent bytecode patterns. Exact bytecode changes must be supplied as tested recipes under `config/recipes.json` for the target Android/HyperOS version.
 
-### URL ROM
+The original AArch64 reference binary is retained under `bin/android-aarch64/reference-patch-rom` for compatibility/reference work; it is not used as an x86_64 GitHub Actions implementation.
 
-Khuyến nghị URL trả trực tiếp file ZIP/Payload và có thể tải không cần cookie đăng nhập. Engine tải file theo HTTP và giữ cache trong workspace.
-
-## Feature model
-
-Các chức năng tương ứng menu Tool-Tree được map thành feature Python:
-
-| Feature | Vai trò |
-|---|---|
-| `cn_global_patch` | patch property/rule để thích nghi CN/Global |
-| `keyboard_unlock` | patch property/resource theo profile |
-| `framework_patch_rules` | patch file/rule cho framework |
-| `app_patches` | sửa/copy/delete thành phần APK |
-| `add_apps` | thêm APK vào partition |
-| `boot_patch` | overlay ramdisk cho `boot.img` |
-| `vendor_boot_patch` | overlay ramdisk cho `vendor_boot.img` |
-| `delete_apps` | loại bỏ app theo glob |
-| `other_patches` | rule tổng quát |
-
-Không có một patch “CN/Global” hay “advanced keyboard” duy nhất chạy đúng cho mọi HyperOS/Android version. Vì vậy các thay đổi có tính phụ thuộc ROM nằm trong JSON rule/profile; engine chỉ thực hiện đúng rule đã khai báo.
-
-## Tool-Tree
-
-Mặc định workflow pin `TOOL_TREE_REF=V1.6.0`. Có thể đổi qua environment variable hoặc repository variable. Binary được lấy từ `.github/module/bin` của Tool-Tree và dùng cho `magiskboot`, `lpmake`, `lpunpack`, `mkfs.erofs`, `extract.erofs`, `avbtool` và các utility liên quan.
-
-## Super image
-
-Dynamic partitions Android dùng `super` để chứa các partition động như `system`, `vendor`, `product`, `system_ext`, `odm`. Khi build `super.img`, profile thiết bị phải có kích thước/layout phù hợp. Tool kiểm tra `super_size` và ghi cảnh báo nếu `devices/<codename>/partition_info.json` không khớp.
-
-## Boot / AVB
-
-`boot.img`, `vendor_boot.img` và `vbmeta` có quan hệ với Android Verified Boot. Pipeline không tự ký bằng khóa OEM. Nếu build cần re-sign AVB, đưa khóa riêng vào workflow/repository secret và profile hóa phần ký. Không nên nhúng private key vào Git.
-
-## Local
+## Quick start
 
 ```bash
-python -m pip install -r requirements.txt
-python -m romauto.run \\
-  --config config/profiles/default.json \\
-  --stock "https://example.com/stock.zip" \\
-  --port "https://example.com/port.zip" \\
-  --pack-type super \\
-  --fs-type erofs \\
-  --tool-tree
+export PYTHONPATH="$PWD/src"
+python3 main.py list-mods
+python3 main.py doctor
+python3 main.py plan workspace/input/rom.zip --feature reboot_menu
+python3 main.py patch workspace/input/rom.zip --feature reboot_menu
 ```
 
-## Cấu trúc
+Install the external tools listed in `config/pipeline.json`. For GitHub Actions, the workflow installs Java, Build Tools, e2fsprogs and erofs-utils; `lpunpack/lpmake/lpdump` must be provided in `bin/linux-x86_64/` or installed on the runner.
 
-- `src/`: engine HyperOS-Port-Python nền.
-- `romauto/`: orchestration layer mới.
-- `config/profiles/`: profile ROM.
-- `patches/`: rule patch.
-- `assets/apps/`: APK bổ sung do người dùng cung cấp.
-- `.github/workflows/`: CI và build ROM tự động.
+## Feature selection
 
-## Giới hạn quan trọng
+Feature IDs are defined in `config/mods.json`. The resolver maps each feature to only the APK/JAR targets declared by the reference tool. For example:
 
-ROM Android vendor-specific không thể đảm bảo một bộ byte patch dùng chung cho mọi thiết bị. Tự động hóa đáng tin cậy cần profile theo codename, Android/HyperOS version, file system, partition layout và phiên bản framework. Pipeline vì thế ưu tiên **fail rõ ràng + report** thay vì âm thầm tạo image có nguy cơ bootloop.
+`reboot_menu` -> `MiuiSystemUI.apk`
+
+`fix_delayed_notifications` -> `MiuiSystemUI.apk`, `PowerKeeper.apk`, `miui-framework.jar`, `miui-services.jar`
+
+`advanced_keyboard` -> `miui-framework.jar`, `miui-services.jar`, `FrequentPhrase.apk`, `MiuiSystemUI.apk`, `Settings.apk`
+
+## Resume
+
+The pipeline writes `workspace/state/pipeline.json`. It is safe to inspect with:
+
+```bash
+python3 main.py resume
+```
