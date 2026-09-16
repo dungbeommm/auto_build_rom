@@ -63,9 +63,11 @@ jobs:
           command -v lpunpack
           command -v lpmake
           command -v simg2img
+          command -v fsck.erofs
           lpunpack --help >/dev/null 2>&1 || true
           lpmake --help >/dev/null 2>&1 || true
           simg2img --help >/dev/null 2>&1 || true
+          fsck.erofs --help | grep -q -- '--extract'
 
       - name: Prepare workspace
         run: |

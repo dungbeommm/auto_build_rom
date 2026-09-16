@@ -33,10 +33,14 @@ class ImageManager:
             run([debugfs, "-R", f"rdump / {out}", str(image)], logger=self.log)
             return out
         if fs == "erofs":
-            dump = shutil.which("extract.erofs") or shutil.which("dump.erofs")
-            if not dump:
-                raise ToolError("EROFS image detected but extract.erofs/dump.erofs is missing")
-            run([dump, str(image), str(out)], logger=self.log)
+            # dump.erofs is an inspector only; it does not accept an output
+            # directory. Use fsck.erofs with --extract=<directory> for
+            # actual filesystem extraction. Modern erofs-utils exposes this
+            # form (Ubuntu 24.04 ships erofs-utils 1.7.1).
+            fsck = shutil.which("fsck.erofs")
+            if not fsck:
+                raise ToolError("EROFS image detected but fsck.erofs is missing; install erofs-utils")
+            run([fsck, f"--extract={out}", str(image)], logger=self.log)
             return out
         raise ToolError(f"Unsupported filesystem in {image}")
 
