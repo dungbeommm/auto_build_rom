@@ -67,10 +67,7 @@ def process_sparse_images(images_dir: Path, logger: logging.Logger, shell) -> No
         logger.info("Using simg2img from system PATH")
 
     # 1. Handle super.img
-    super_chunks = sorted(
-        list(images_dir.glob("super.img.*")) + list(images_dir.glob("super.img_sparsechunk.*")),
-        key=_natural_sort_key,
-    )
+    super_chunks = sorted(list(images_dir.glob("super.img.*")), key=_natural_sort_key)
     target_super = images_dir / "super.img"
 
     if super_chunks:

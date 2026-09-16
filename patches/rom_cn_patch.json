@@ -1,0 +1,12 @@
+{
+  "props": [
+    {
+      "partition": "product",
+      "values": {
+        "ro.miui.build.region": "global",
+        "ro.miui.region": "US"
+      }
+    }
+  ],
+  "replace": []
+}

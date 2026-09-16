@@ -1,120 +1,92 @@
-name: Build modified HyperOS ROM
+name: Build ROM
 
 on:
   workflow_dispatch:
     inputs:
       stock_url:
-        description: Official Xiaomi/HyperOS ROM URL
+        description: "Stock ROM URL"
         required: true
         type: string
       port_url:
-        description: Optional port ROM URL (leave empty for official-mod mode)
+        description: "Port ROM URL"
         required: false
         type: string
-      pack_type:
-        description: Output package
+      profile:
+        description: "Profile JSON under config/profiles"
         required: true
-        default: super
+        default: "config/profiles/default.json"
+        type: string
+      pack_type:
+        description: "Output image package"
+        required: true
+        default: "super"
         type: choice
         options: [super, payload]
-  issue_comment:
-    types: [created]
+      fs_type:
+        description: "Filesystem for rebuilt dynamic partitions"
+        required: true
+        default: "erofs"
+        type: choice
+        options: [erofs, ext4]
+      device:
+        description: "Optional target device code"
+        required: false
+        type: string
 
 permissions:
-  contents: write
-  issues: read
+  contents: read
 
-concurrency:
-  group: rom-${{ github.event.issue.number || github.run_id }}
-  cancel-in-progress: false
+env:
+  TOOL_TREE_REF: V1.6.0
 
 jobs:
   build:
-    if: github.event_name == 'workflow_dispatch' || startsWith(github.event.comment.body, '/mod-rom ')
     runs-on: ubuntu-24.04
-    timeout-minutes: 360
-    env:
-      INPUT_STOCK_URL: ${{ inputs.stock_url }}
-      INPUT_PORT_URL: ${{ inputs.port_url }}
-      PACK_TYPE: ${{ inputs.pack_type || 'super' }}
-      PYTHONUNBUFFERED: '1'
+    timeout-minutes: 180
     steps:
       - uses: actions/checkout@v4
 
-      - name: Validate project layout
-        shell: bash
+      - name: Install host tools
         run: |
-          set -euo pipefail
-          test -f main.py
-          test -f scripts/extract_request.py
-          test -x bin/linux/x86_64/lpunpack || chmod +x bin/linux/x86_64/*
+          sudo apt-get update
+          sudo apt-get install -y git aria2 zip unzip p7zip-full xz-utils zstd lz4 rsync openssl
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
 
-      - name: Maximize build disk
-        uses: easimon/maximize-build-space@master
-        with:
-          root-reserve-mb: 8192
-          temp-reserve-mb: 2048
-          swap-size-mb: 1024
-          remove-dotnet: 'true'
-          remove-android: 'true'
-          remove-haskell: 'true'
+      - name: Install pinned Tool-Tree
+        run: python scripts/install_tools.py
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-          cache: pip
-
-      - name: Install Python dependency
-        run: python -m pip install --disable-pip-version-check -r requirements.txt
-
-      - name: Resolve request
-        id: request
-        run: python scripts/extract_request.py
-
-      - name: Disk preflight
-        shell: bash
-        run: |
-          set -euo pipefail
-          df -h .
-          free_kb=$(df --output=avail -k . | tail -1)
-          test "$free_kb" -ge 41943040 || { echo 'At least 40 GiB free space is required'; exit 2; }
-
-      - name: Build ROM
-        shell: bash
+      - name: Run ROM pipeline
         env:
-          STOCK_URL: ${{ steps.request.outputs.stock_url }}
-          PORT_URL: ${{ steps.request.outputs.port_url }}
+          PYTHONUNBUFFERED: "1"
         run: |
-          set -euo pipefail
-          chmod +x bin/linux/x86_64/* bin/flash/zstd || true
-          export PATH="$PWD/bin/linux/x86_64:$PWD/bin/flash:$PATH"
-          args=(--stock "$STOCK_URL" --pack-type "$PACK_TYPE" --fs-type erofs --clean
-                --enable-diff-report --diff-report build/diff-report.json
-                --preflight-report build/preflight-report.json)
-          if [[ -n "$PORT_URL" ]]; then args+=(--port "$PORT_URL"); fi
-          python main.py "${args[@]}"
+          python -m romauto.run \
+            --config "${{ inputs.profile }}" \
+            --stock "${{ inputs.stock_url }}" \
+            --port "${{ inputs.port_url }}" \
+            --pack-type "${{ inputs.pack_type }}" \
+            --fs-type "${{ inputs.fs_type }}" \
+            ${{ inputs.device != '' && format('--device "{0}"', inputs.device) || '' }}
 
-      - name: Prepare release files
-        if: success()
-        run: python scripts/prepare_release.py
+      - name: Validate reports
+        run: |
+          test -f build/preflight-report.json
+          test -f build/feature-report.json || true
+          test -f build/diff-report.json
+          find build -maxdepth 3 -type f -printf '%p %k KB\n' | sort | head -200
 
-      - name: Publish release
-        if: success()
-        uses: softprops/action-gh-release@v2
+      - name: Package artifacts
+        run: |
+          mkdir -p release
+          find out build -type f \( -name '*.img' -o -name '*.zip' -o -name 'payload.bin' \) -exec cp -v {} release/ \; || true
+          cp build/preflight-report.json release/ || true
+          cp build/feature-report.json release/ || true
+          cp build/diff-report.json release/ || true
+          sha256sum release/* > release/SHA256SUMS 2>/dev/null || true
+
+      - uses: actions/upload-artifact@v4
         with:
-          tag_name: rom-${{ github.run_number }}
-          name: Modified HyperOS ROM #${{ github.run_number }}
-          generate_release_notes: true
-          files: release/*
-
-      - name: Upload diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: diagnostics-${{ github.run_number }}
-          if-no-files-found: ignore
+          name: rom-build
+          path: release/
+          if-no-files-found: error
           retention-days: 7
-          path: |
-            porting.log
-            build/preflight-report.json
-            build/diff-report.json

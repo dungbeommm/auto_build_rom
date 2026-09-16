@@ -83,7 +83,7 @@ class RomPackage:
                 elif any(x.startswith("images/super.img.") for x in namelist):
                     # xiaomi.eu ROMs with split sparse super images (e.g., super.img.0, super.img.1)
                     self.rom_type = RomType.FASTBOOT
-        elif self.path.name.lower().endswith((".tgz", ".tar.gz")):
+        elif self.path.suffix == ".tgz":
             self.rom_type = RomType.FASTBOOT
 
         self.logger.info(f"[{self.label}] Detected Type: {self.rom_type.name}")

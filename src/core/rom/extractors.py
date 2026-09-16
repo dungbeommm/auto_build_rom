@@ -3,7 +3,6 @@ from __future__ import annotations
 import os
 import shutil
 import sys
-import tarfile
 import zipfile
 from pathlib import Path
 from typing import TYPE_CHECKING, List, Optional
@@ -141,97 +140,111 @@ def extract_fastboot(
     package: RomPackage,
     partitions: Optional[List[str]],
 ) -> None:
-    """Extract Fastboot ZIP/TGZ images and unpack ``super.img``.
+    """Extract fastboot images (super.img) from ROM package.
 
-    Archives are streamed member-by-member into ``images_dir``. Only regular
-    image members are accepted and their directory components are discarded,
-    preventing path traversal while avoiding a second full archive copy.
+    Args:
+        package: The RomPackage instance.
+        partitions: List of partitions to extract (None = all).
     """
-
-    def selected(member_name: str) -> bool:
-        name = Path(member_name).name
-        is_super = name == "super.img" or name.startswith("super.img.") or name.startswith("super.img_sparsechunk.")
-        if not (name.endswith(".img") or is_super):
-            return False
-        part_name = name[:-4] if name.endswith(".img") else name
-        part_name = part_name.removesuffix("_a").removesuffix("_b")
-        return not partitions or is_super or part_name in partitions
-
-    def write_stream(name: str, source) -> None:
-        target = package.images_dir / Path(name).name
-        package.logger.info("Extracting %s...", name)
-        with target.open("wb") as output:
-            shutil.copyfileobj(source, output, length=8 * 1024 * 1024)
-
-    if zipfile.is_zipfile(package.path):
-        with zipfile.ZipFile(package.path, "r") as archive:
-            for info in archive.infolist():
-                if info.is_dir() or not selected(info.filename):
-                    continue
-                with archive.open(info, "r") as source:
-                    write_stream(info.filename, source)
-    elif tarfile.is_tarfile(package.path):
-        with tarfile.open(package.path, "r:*") as archive:
-            for member in archive:
-                if not member.isfile() or not selected(member.name):
-                    continue
-                source = archive.extractfile(member)
-                if source is None:
-                    continue
-                with source:
-                    write_stream(member.name, source)
-    else:
-        raise ValueError(f"Unsupported Fastboot archive: {package.path}")
-
-    from .utils import process_sparse_images
-
-    process_sparse_images(package.images_dir, package.logger, package.shell)
-    super_img = package.images_dir / "super.img"
-    if not super_img.exists():
-        return
-
-    package.logger.info("[%s] Unpacking logical partitions from super.img...", package.label)
-    try:
-        if partitions:
-            for part in partitions:
-                extracted = False
-                for candidate in (part, f"{part}_a"):
-                    try:
-                        package.shell.run([
-                            sys.executable,
-                            "src/utils/lpunpack.py",
-                            "-p",
-                            candidate,
-                            str(super_img),
-                            str(package.images_dir),
-                        ])
-                        extracted = True
-                        break
-                    except Exception:
-                        continue
-                if not extracted:
-                    package.logger.warning("[%s] Partition not found in super: %s", package.label, part)
-        else:
-            package.shell.run([
-                sys.executable,
-                "src/utils/lpunpack.py",
-                str(super_img),
-                str(package.images_dir),
-            ])
-    finally:
-        super_img.unlink(missing_ok=True)
-
-    for suffix in ("_a.img", "_b.img"):
-        for image in package.images_dir.glob(f"*{suffix}"):
-            if image.stat().st_size == 0:
-                image.unlink()
+    # Zip mode logic
+    with zipfile.ZipFile(package.path, "r") as z:
+        for f in z.namelist():
+            is_super_img = False
+            if f.endswith("super.img") or f.endswith("images/super.img"):
+                is_super_img = True
+            elif "images/super.img." in f or f.startswith("super.img."):
+                # xiaomi.eu ROMs with split sparse super images (e.g., super.img.0, super.img.1)
+                is_super_img = True
+            elif not f.endswith(".img"):
                 continue
-            target = image.with_name(image.name.removesuffix(suffix) + ".img")
-            if target.exists():
-                image.unlink()
-            else:
-                image.rename(target)
-                package.logger.info("[%s] Normalized %s -> %s", package.label, image.name, target.name)
+
+            part_name = Path(f).stem
+            # Skip if partitions filter is active, but always extract super.img chunks
+            # super.img chunks are needed for lpunpack to extract logical partitions
+            if partitions and not is_super_img and part_name not in partitions:
+                continue
+
+            package.logger.info(f"Extracting {f}...")
+            source = z.open(f)
+            target_file = open(package.images_dir / Path(f).name, "wb")
+            with source, target_file:
+                shutil.copyfileobj(source, target_file)
+
+        from .utils import process_sparse_images
+
+        process_sparse_images(package.images_dir, package.logger, package.shell)
+
+        super_img = package.images_dir / "super.img"
+        if super_img.exists():
+            package.logger.info(
+                f"[{package.label}] Found super.img, unpacking logical partitions..."
+            )
+
+            try:
+                if partitions:
+                    package.logger.info(
+                        f"[{package.label}] Unpacking specific partitions: {partitions}"
+                    )
+                    for part in partitions:
+                        part_a = f"{part}_a"
+                        try:
+                            cmd_py = [
+                                sys.executable,
+                                "src/utils/lpunpack.py",
+                                "-p",
+                                part_a,
+                                str(super_img),
+                                str(package.images_dir),
+                            ]
+                            package.shell.run(cmd_py)
+                        except Exception as e:
+                            package.logger.warning(
+                                f"[{package.label}] Failed to extract {part_a}: {e}"
+                            )
+                else:
+                    package.logger.info(
+                        f"[{package.label}] Unpacking ALL partitions from super.img..."
+                    )
+                    cmd_py = [
+                        sys.executable,
+                        "src/utils/lpunpack.py",
+                        str(super_img),
+                        str(package.images_dir),
+                    ]
+                    package.shell.run(cmd_py)
+
+            except Exception as e:
+                package.logger.error(f"Failed to unpack super.img: {e}")
+                raise
+            finally:
+                if super_img.exists():
+                    os.remove(super_img)
+
+            # === Rename partitions with suffixes (e.g., system_a.img -> system.img) ===
+            # This simplifies all subsequent steps.
+            # Logic: Prioritize _a, then _b. Delete empty images.
+            for suffix in ["_a.img", "_b.img"]:
+                for img in package.images_dir.glob(f"*{suffix}"):
+                    # If image is empty (0 bytes), it's a dummy slot, just delete it
+                    if img.stat().st_size == 0:
+                        os.remove(img)
+                        continue
+
+                    base_name = img.name.replace(suffix, ".img")
+                    target_img = img.with_name(base_name)
+
+                    if not target_img.exists():
+                        img.rename(target_img)
+                        package.logger.info(
+                            f"[{package.label}] Normalized partition name: {img.name} -> {base_name}"
+                        )
+                    else:
+                        # If target already exists, and the current one is just another slot,
+                        # we keep the one already there (usually _a was processed first)
+                        package.logger.debug(
+                            f"[{package.label}] Skipping {img.name} as {base_name} already exists."
+                        )
+                        os.remove(img)
 
 
 def extract_local(

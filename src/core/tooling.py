@@ -44,7 +44,8 @@ def resolve_tooling(project_root: Path, logger: logging.Logger) -> ResolvedTooli
         platform_dir = "linux"
         executable_extension = ""
 
-    platform_bin_dir = bin_root / platform_dir / arch
+    tool_tree_bin = Path(__import__("os").environ["TOOL_TREE_BIN"]).resolve() if __import__("os").environ.get("TOOL_TREE_BIN") else None
+    platform_bin_dir = tool_tree_bin if tool_tree_bin and tool_tree_bin.exists() else bin_root / platform_dir / arch
     fallback_dir = bin_root / platform_dir
     if not platform_bin_dir.exists() and fallback_dir.exists():
         platform_bin_dir = fallback_dir

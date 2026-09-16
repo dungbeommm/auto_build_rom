@@ -27,7 +27,8 @@ class ShellRunner:
             self.arch = "x86_64" # 默认 fallback
 
         project_root = Path(__file__).resolve().parent.parent.parent
-        self.bin_dir = project_root / "bin" / self.os_name / self.arch
+        tool_tree_override = os.environ.get("TOOL_TREE_BIN")
+        self.bin_dir = Path(tool_tree_override).resolve() if tool_tree_override else project_root / "bin" / self.os_name / self.arch
 
         if not self.bin_dir.exists():
             self.logger.warning(f"Binary directory not found: {self.bin_dir}")

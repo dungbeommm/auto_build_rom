@@ -1,0 +1,11 @@
+{
+  "props": [
+    {
+      "partition": "product",
+      "values": {
+        "persist.sys.miui_ime_advanced": "1"
+      }
+    }
+  ],
+  "replace": []
+}

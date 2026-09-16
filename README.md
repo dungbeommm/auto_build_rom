@@ -1,58 +1,78 @@
-# ToolTree HyperOS AutoBuilder
+# ROM Auto Builder — HyperOS / Xiaomi ROM GitHub Actions
 
-Bản viết lại dùng kiến trúc Python của **HyperOS-Port-Python**, thay cho chuỗi shell phụ thuộc Android runner. Dự án chạy trực tiếp trên GitHub-hosted `ubuntu-24.04`.
+Tool tự động hóa ROM theo pipeline:
 
-## Các nhóm tính năng
+`URL ROM -> download -> preflight -> unpack -> port/sync -> framework/APK patch -> boot/vendor_boot patch -> rebuild EROFS/ext4 -> super.img hoặc payload -> report + artifact`
 
-- Tải ROM bằng aria2: tiếp tục file dở, nhiều kết nối, cache tên file.
-- Đọc Xiaomi Fastboot `.tgz`/`.tar.gz`/`.zip`, OTA `payload.bin`, ZIP chứa payload và thư mục ROM đã giải nén.
-- Giải `super.img`, sparse/split sparse, EROFS/EXT4; nhận phân vùng `_a`.
-- Vá `framework.jar`, `services.jar`, `miui-services.jar` bằng smali; bỏ kiểm tra chữ ký/hạ cấp theo engine có sẵn.
-- Vá ứng dụng theo plugin: Settings, SecurityCenter, Installer, PowerKeeper, Joyose, HTMLViewer, overlay thiết bị.
-- Mở khóa feature XML/build.prop, CN/global/EU localization, file replacement và thêm app qua cấu hình.
-- Xử lý firmware, `boot.img`, `vendor_boot.img`, AVB, repack `super` hoặc `payload`.
-- Preflight, snapshot/cache/diff report và release manifest SHA-256.
+Engine này lấy phần porting/unpack/repack từ bộ HyperOS-Port-Python bạn cung cấp và thêm một lớp Python `romauto` để điều phối profile, patch và GitHub Actions. Tool-Tree được lấy từ upstream theo tag để có các binary unpack/repack cần thiết thay vì nhúng binary khổng lồ vào repository.
 
-> Một ROM đã sửa có thể không boot nếu cấu hình thiết bị, kích thước super hoặc AVB không phù hợp. Luôn mở khóa bootloader và giữ ROM gốc để khôi phục.
+## GitHub Actions
 
-## Cách dùng trên GitHub
+Vào **Actions → Build ROM → Run workflow** rồi nhập:
 
-1. Tạo repository mới và tải toàn bộ nội dung dự án này lên **đúng thư mục gốc**.
-2. Mở **Actions → Build modified HyperOS ROM → Run workflow**.
-3. Dán `stock_url`. Để trống `port_url` nếu chỉ muốn sửa ROM chính thức.
-4. Chọn `super` (gói hybrid flash) hoặc `payload`.
-5. Tải các part trong Release, đặt cùng thư mục và chạy `python JOIN.py`.
+- `stock_url`: URL trực tiếp tới ROM stock.
+- `port_url`: URL trực tiếp tới ROM port; bỏ trống để chạy official-modification mode.
+- `profile`: file JSON profile, ví dụ `config/profiles/default.json`.
+- `pack_type`: `super` hoặc `payload`.
+- `fs_type`: `erofs` hoặc `ext4`.
+- `device`: mã máy nếu muốn khóa profile thiết bị.
 
-Cũng có thể bình luận trong Issue:
+### URL ROM
 
-```text
-/mod-rom https://.../rom.tgz
-```
+Khuyến nghị URL trả trực tiếp file ZIP/Payload và có thể tải không cần cookie đăng nhập. Engine tải file theo HTTP và giữ cache trong workspace.
 
-Port hai ROM:
+## Feature model
 
-```text
-/mod-rom https://.../stock.tgz port=https://.../port.zip
-```
+Các chức năng tương ứng menu Tool-Tree được map thành feature Python:
 
-## Chạy cục bộ
+| Feature | Vai trò |
+|---|---|
+| `cn_global_patch` | patch property/rule để thích nghi CN/Global |
+| `keyboard_unlock` | patch property/resource theo profile |
+| `framework_patch_rules` | patch file/rule cho framework |
+| `app_patches` | sửa/copy/delete thành phần APK |
+| `add_apps` | thêm APK vào partition |
+| `boot_patch` | overlay ramdisk cho `boot.img` |
+| `vendor_boot_patch` | overlay ramdisk cho `vendor_boot.img` |
+| `delete_apps` | loại bỏ app theo glob |
+| `other_patches` | rule tổng quát |
 
-Yêu cầu Linux x86_64, Python 3.11+, Java, khoảng 40–80 GiB trống.
+Không có một patch “CN/Global” hay “advanced keyboard” duy nhất chạy đúng cho mọi HyperOS/Android version. Vì vậy các thay đổi có tính phụ thuộc ROM nằm trong JSON rule/profile; engine chỉ thực hiện đúng rule đã khai báo.
+
+## Tool-Tree
+
+Mặc định workflow pin `TOOL_TREE_REF=V1.6.0`. Có thể đổi qua environment variable hoặc repository variable. Binary được lấy từ `.github/module/bin` của Tool-Tree và dùng cho `magiskboot`, `lpmake`, `lpunpack`, `mkfs.erofs`, `extract.erofs`, `avbtool` và các utility liên quan.
+
+## Super image
+
+Dynamic partitions Android dùng `super` để chứa các partition động như `system`, `vendor`, `product`, `system_ext`, `odm`. Khi build `super.img`, profile thiết bị phải có kích thước/layout phù hợp. Tool kiểm tra `super_size` và ghi cảnh báo nếu `devices/<codename>/partition_info.json` không khớp.
+
+## Boot / AVB
+
+`boot.img`, `vendor_boot.img` và `vbmeta` có quan hệ với Android Verified Boot. Pipeline không tự ký bằng khóa OEM. Nếu build cần re-sign AVB, đưa khóa riêng vào workflow/repository secret và profile hóa phần ký. Không nên nhúng private key vào Git.
+
+## Local
 
 ```bash
 python -m pip install -r requirements.txt
-chmod +x bin/linux/x86_64/* bin/flash/zstd
-export PATH="$PWD/bin/linux/x86_64:$PWD/bin/flash:$PATH"
-python main.py --stock 'https://.../rom.tgz' --pack-type super --fs-type erofs --clean \
-  --enable-diff-report --diff-report build/diff-report.json
+python -m romauto.run \\
+  --config config/profiles/default.json \\
+  --stock "https://example.com/stock.zip" \\
+  --port "https://example.com/port.zip" \\
+  --pack-type super \\
+  --fs-type erofs \\
+  --tool-tree
 ```
 
-## Cấu hình
+## Cấu trúc
 
-- `devices/common/features.json`: feature XML và build.prop.
-- `devices/common/replacements.json`: thay thế/copy ứng dụng và tài nguyên.
-- `devices/common/config.json`: kiểu pack, filesystem và các override chung.
-- `devices/<codename>/`: ghi đè riêng cho thiết bị.
-- `src/core/modifiers/plugins/`: plugin hệ thống/APK.
+- `src/`: engine HyperOS-Port-Python nền.
+- `romauto/`: orchestration layer mới.
+- `config/profiles/`: profile ROM.
+- `patches/`: rule patch.
+- `assets/apps/`: APK bổ sung do người dùng cung cấp.
+- `.github/workflows/`: CI và build ROM tự động.
 
-Dự án giữ giấy phép gốc tại `LICENSE` và bổ sung thay đổi tương thích TGZ/GitHub Actions.
+## Giới hạn quan trọng
+
+ROM Android vendor-specific không thể đảm bảo một bộ byte patch dùng chung cho mọi thiết bị. Tự động hóa đáng tin cậy cần profile theo codename, Android/HyperOS version, file system, partition layout và phiên bản framework. Pipeline vì thế ưu tiên **fail rõ ràng + report** thay vì âm thầm tạo image có nguy cơ bootloop.
