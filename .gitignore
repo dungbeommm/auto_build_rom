@@ -1,0 +1,12 @@
+workspace/input/*
+workspace/source/*
+workspace/partitions/*
+workspace/targets/*
+workspace/decoded/*
+workspace/repacked/*
+workspace/output/*
+workspace/state/*
+workspace/logs/*
+__pycache__/
+*.pyc
+*.log

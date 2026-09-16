@@ -1,0 +1,5 @@
+{
+  "schema_version": 1,
+  "note": "Recipes intentionally require explicit patterns. Unknown MIUI/HyperOS versions fail closed instead of applying guessed patches.",
+  "recipes": {}
+}

@@ -1,0 +1,16 @@
+{
+  "systemui": ["reboot_menu"],
+  "notifications": ["fix_delayed_notifications"],
+  "framework": ["disable_apk_signature_verification", "kaorios_toolbox", "remove_enforce_version_policy"],
+  "cn_global": ["show_device_information", "show_google_location_privacy", "show_notification_icons", "dark_app_list", "remove_open_app_notification", "font_fix", "reboot_menu"],
+  "keyboard": ["advanced_keyboard"],
+  "apps": ["theme_store_purchases", "app_vault_purchases", "aqi_weather_cn", "joyose_mod", "hide_china_gallery_map", "enable_gms_provision", "remove_10s_show_data_disable_apps"],
+  "all_reference_except_boot": [
+    "disable_apk_signature_verification", "kaorios_toolbox", "remove_enforce_version_policy",
+    "fix_delayed_notifications", "show_device_information", "show_google_location_privacy", "show_notification_icons",
+    "reboot_menu", "dark_app_list", "remove_open_app_notification", "font_fix", "advanced_keyboard",
+    "unlock_screenshot", "unlock_fps", "theme_reset", "lockscreen_error", "camera_60hz", "unlock_window",
+    "unlock_android_data_obb", "setupwizard", "theme_store_purchases", "app_vault_purchases", "aqi_weather_cn",
+    "joyose_mod", "hide_china_gallery_map", "enable_gms_provision", "remove_10s_show_data_disable_apps"
+  ]
+}
