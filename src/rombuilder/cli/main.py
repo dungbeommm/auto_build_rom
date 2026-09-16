@@ -32,24 +32,7 @@ def main(argv=None):
     if a.cmd=='plan':
         print(json.dumps(pipe.analyze(a.source,a.feature),indent=2,ensure_ascii=False)); return 0
     if a.cmd=='patch':
-        source=a.source
-        if source.is_file() and source.suffix.lower()=='.zip':
-            tree=pipe.rom.extract_zip(source)
-        elif source.is_dir():
-            tree=source
-        else:
-            roots=[source]
-            result=pipe.patch_from_tree(roots,a.feature,strict=not a.best_effort)
-            print(json.dumps(result,indent=2,ensure_ascii=False)); return 0
-
-        super_img=pipe.rom.discover_super(tree)
-        if super_img:
-            out=pipe.rom.extract_super(super_img)
-            roots=[p for p in out.iterdir() if p.is_dir()]
-        else:
-            flat=pipe.rom.copy_image_partitions(tree)
-            roots=[flat] if flat.exists() else [tree]
-        result=pipe.patch_from_tree(roots,a.feature,strict=not a.best_effort)
+        result=pipe.patch(a.source,a.feature,strict=not a.best_effort)
         print(json.dumps(result,indent=2,ensure_ascii=False)); return 0
     if a.cmd=='resume':
         print(json.dumps(pipe.state.data,indent=2,ensure_ascii=False)); return 0
