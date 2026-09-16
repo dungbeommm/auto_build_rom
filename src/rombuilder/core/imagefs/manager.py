@@ -1,60 +1,39 @@
 from __future__ import annotations
-import shutil
+import shutil, struct, subprocess
 from pathlib import Path
-from ..exec import run, require, ToolError
+from ..exec import run, require
 
 class ImageManager:
-    """Read-only extraction of logical partition filesystem images."""
-    def __init__(self, logger, root: Path | None = None):
-        self.log = logger
-        self.root = Path(root) if root else None
-
-    def _read(self, image: Path, offset: int, size: int = 4096) -> bytes:
-        with image.open("rb") as f:
-            f.seek(offset)
-            return f.read(size)
-
-    def fstype(self, image: Path) -> str:
-        sb = self._read(image, 0x438, 2)
-        if sb == b"\x53\xef":
-            return "ext4"
-        for off in (0, 1024):
-            head = self._read(image, off, 4)
-            if head in (b"\xe2\xe1\xf5\xe0", b"EROFS"):
-                return "erofs"
-        return "unknown"
-
-    def extract(self, image: Path, out: Path) -> Path:
-        out.mkdir(parents=True, exist_ok=True)
-        fs = self.fstype(image)
-        self.log.info("Extracting %s (filesystem=%s) -> %s", image, fs, out)
-        if fs == "ext4":
-            debugfs = require("debugfs", "debugfs")
-            run([debugfs, "-R", f"rdump / {out}", str(image)], logger=self.log)
-            return out
-        if fs == "erofs":
-            # dump.erofs is an inspector only; it does not accept an output
-            # directory. Use fsck.erofs with --extract=<directory> for
-            # actual filesystem extraction. Modern erofs-utils exposes this
-            # form (Ubuntu 24.04 ships erofs-utils 1.7.1).
-            fsck = shutil.which("fsck.erofs")
-            if not fsck:
-                raise ToolError("EROFS image detected but fsck.erofs is missing; install erofs-utils")
-            run([fsck, f"--extract={out}", str(image)], logger=self.log)
-            return out
-        raise ToolError(f"Unsupported filesystem in {image}")
-
-    def extract_partitions(self, partition_dir: Path, out_root: Path) -> list[Path]:
-        roots=[]
-        out_root.mkdir(parents=True, exist_ok=True)
-        for image in sorted(partition_dir.glob("*.img")):
-            name=image.stem
-            out=out_root/name
-            marker=out/".rombuilder_extracted"
-            if marker.exists():
-                self.log.info("Reuse extracted partition: %s", out)
-                roots.append(out); continue
-            self.extract(image,out)
-            marker.write_text(str(image),encoding="utf-8")
-            roots.append(out)
-        return roots
+    def __init__(self, logger, root): self.log=logger; self.root=Path(root)
+    def fstype(self,image:Path):
+        with image.open('rb') as f:
+            f.seek(0); head=f.read(4096)
+        if len(head)>=0x43c and head[0x438:0x43a] == b'\x53\xef': return 'ext4'
+        if head[:4] == b'\xe2\xe1\xf5\xe0' or head[1024:1028] == b'\xe2\xe1\xf5\xe0': return 'erofs'
+        return 'unknown'
+    def extract(self,image:Path,out:Path):
+        fs=self.fstype(image); out.mkdir(parents=True,exist_ok=True)
+        if fs=='ext4':
+            debugfs=require('debugfs','debugfs')
+            run([debugfs,'-R',f'rdump / {out}',str(image)],logger=self.log)
+        elif fs=='erofs':
+            fsck=shutil.which('fsck.erofs') or str(self.root/'bin/linux-x86_64/fsck.erofs')
+            if not Path(fsck).exists() and not shutil.which('fsck.erofs'): raise RuntimeError('fsck.erofs is required for EROFS extraction')
+            run([fsck,f'--extract={out}',str(image)],logger=self.log)
+        else: raise RuntimeError(f'Unsupported filesystem for {image}: {fs}')
+        return out
+    def repack(self,root:Path,out:Path,fs:str,source_img:Path|None=None):
+        out.parent.mkdir(parents=True,exist_ok=True)
+        if fs=='erofs':
+            tool=shutil.which('mkfs.erofs') or str(self.root/'bin/linux-x86_64/mkfs.erofs')
+            if not shutil.which('mkfs.erofs') and not Path(tool).exists(): raise RuntimeError('mkfs.erofs is required')
+            run([tool,str(out),str(root)],logger=self.log)
+        elif fs=='ext4':
+            # mke2fs -d is available on Ubuntu and produces a regular ext4 image.
+            mke2fs=require('mke2fs','mke2fs')
+            du=subprocess.check_output(['du','-sb',str(root)],text=True).split()[0]
+            size=max(int(du)+64*1024*1024, 128*1024*1024)
+            blocks=(size+4095)//4096
+            run([mke2fs,'-t','ext4','-d',str(root),str(out),str(blocks)],logger=self.log)
+        else: raise RuntimeError(f'Unsupported filesystem for repack: {fs}')
+        return out

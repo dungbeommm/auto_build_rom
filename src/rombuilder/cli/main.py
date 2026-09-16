@@ -15,6 +15,7 @@ def main(argv=None):
     p=sub.add_parser('list-mods'); p.add_argument('--json',action='store_true')
     p=sub.add_parser('plan'); p.add_argument('source',type=Path); p.add_argument('--feature',action='append',required=True); p.add_argument('--verbose',action='store_true')
     p=sub.add_parser('patch'); p.add_argument('source',type=Path); p.add_argument('--feature',action='append',required=True); p.add_argument('--best-effort',action='store_true'); p.add_argument('--verbose',action='store_true')
+    p=sub.add_parser('build'); p.add_argument('source',type=Path); p.add_argument('--feature',action='append',required=True); p.add_argument('--best-effort',action='store_true'); p.add_argument('--output',type=Path,default=Path('workspace/release/rom-modified.zip')); p.add_argument('--verbose',action='store_true')
     p=sub.add_parser('resume'); p.add_argument('--verbose',action='store_true')
     p=sub.add_parser('doctor'); p.add_argument('--verbose',action='store_true')
     a=parser.parse_args(argv)
@@ -34,6 +35,11 @@ def main(argv=None):
     if a.cmd=='patch':
         result=pipe.patch(a.source,a.feature,strict=not a.best_effort)
         print(json.dumps(result,indent=2,ensure_ascii=False)); return 0
+    if a.cmd=='build':
+        result=pipe.rebuild(a.source,a.feature,strict=not a.best_effort)
+        tree=pipe.last_tree or Path(a.source)
+        out=pipe.package(tree,a.output)
+        print(json.dumps({'result':result,'output':str(out)},indent=2,ensure_ascii=False)); return 0
     if a.cmd=='resume':
         print(json.dumps(pipe.state.data,indent=2,ensure_ascii=False)); return 0
     return 1

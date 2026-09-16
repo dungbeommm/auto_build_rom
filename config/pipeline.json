@@ -9,10 +9,18 @@
     "smali": "bin/linux-x86_64/smali.jar",
     "zipalign": "zipalign",
     "apksigner": "apksigner",
-    "java": "java"
+    "java": "java",
+    "simg2img": "simg2img",
+    "fsck.erofs": "fsck.erofs",
+    "mkfs.erofs": "mkfs.erofs",
+    "mke2fs": "mke2fs"
   },
   "rom": {
-    "supported_inputs": ["zip", "super.img", "directory"],
+    "supported_inputs": [
+      "zip",
+      "super.img",
+      "directory"
+    ],
     "preserve_original": true,
     "verify_zip": true
   }

@@ -1,61 +1,42 @@
-# ROM-Auto-Builder
+# ROM Auto Builder
 
-Linux-first ROM modification orchestrator based on the target/dependency declarations from the supplied `Tool-Tree-main` reference.
+Linux/Ubuntu-first ROM image processing pipeline. This project intentionally **does not port ROMs and does not patch `boot.img` or `vendor_boot.img`**.
 
-## Scope
+## Pipeline
 
-Included:
-- ROM ZIP / `super.img` / extracted directory discovery
-- `super.img` partition extraction through `lpunpack`
-- Dependency-aware target selection
-- Exact target registry for APK/JAR files used by the reference patch UI
-- APK decode/build through Apktool
-- JAR DEX decode/build through Baksmali/Smali
-- Fail-closed recipe engine: no guessed bytecode edits
-- Checkpoint state and logs
-- GitHub Actions workflow
-- Verification of rebuilt APK/JAR/ZIP archives
+`ROM URL -> archive extraction -> super.img detection -> sparse conversion -> lpunpack -> dependency-aware partition extraction -> APK/JAR decode -> exact recipe -> repack -> filesystem image -> lpmake -> ROM ZIP -> verification`
 
-Excluded by design:
-- ROM porting
-- `boot.img` patching
-- `vendor_boot.img` patching
+## Important safety rule
+
+Bytecode modifications are **fail-closed**. A feature is not allowed to modify a class merely because a class/file has a similar name. `config/recipes.json` must contain an exact, version-appropriate recipe. If no recipe exists, the build stops instead of guessing.
+
+The original Tool-Tree reference contains a native Android `patch-rom` binary. It is kept only as reference material; it is not silently executed as if it were a Linux x86_64 binary.
+
+## Excluded
+
+- boot image patching
+- vendor_boot patching
 - fake locked bootloader
-- boot SELinux patching
-- Wi-Fi hacking addon
+- SELinux boot patching
+- ROM porting
+- Wi-Fi hacking
 
-## Important accuracy rule
-
-The supplied reference exposes the exact target/dependency list in `patch_rom/index.bash`, but the actual patch implementation is compiled into the Android AArch64 binary `patch-rom`. The new engine therefore refuses to invent bytecode patterns. Exact bytecode changes must be supplied as tested recipes under `config/recipes.json` for the target Android/HyperOS version.
-
-The original AArch64 reference binary is retained under `bin/android-aarch64/reference-patch-rom` for compatibility/reference work; it is not used as an x86_64 GitHub Actions implementation.
-
-## Quick start
+## Commands
 
 ```bash
-export PYTHONPATH="$PWD/src"
-python3 main.py list-mods
-python3 main.py doctor
-python3 main.py plan workspace/input/rom.zip --feature reboot_menu
-python3 main.py patch workspace/input/rom.zip --feature reboot_menu
+bash scripts/run.sh list-mods
+bash scripts/run.sh doctor
+bash scripts/run.sh plan /path/to/rom.zip --feature reboot_menu
+bash scripts/run.sh patch /path/to/rom.zip --feature reboot_menu
+bash scripts/run.sh build /path/to/rom.zip --feature reboot_menu
 ```
 
-Install the external tools listed in `config/pipeline.json`. For GitHub Actions, the workflow installs Java, Build Tools, e2fsprogs and erofs-utils; `lpunpack/lpmake/lpdump` must be provided in `bin/linux-x86_64/` or installed on the runner.
+`build` rebuilds the modified filesystem(s), rebuilds `super.img` with the original LP metadata/group layout, and creates `workspace/release/rom-modified.zip`.
 
-## Feature selection
+## GitHub Actions
 
-Feature IDs are defined in `config/mods.json`. The resolver maps each feature to only the APK/JAR targets declared by the reference tool. For example:
+The workflow bootstraps Linux LP tools and Java APK/JAR tools, accepts raw URLs or Markdown links, handles `.zip` and `.tgz/.tar.gz`, validates the checked-out source, and uploads the resulting ROM artifact. A GitHub Release can optionally be created from the workflow input.
 
-`reboot_menu` -> `MiuiSystemUI.apk`
+## APK signing
 
-`fix_delayed_notifications` -> `MiuiSystemUI.apk`, `PowerKeeper.apk`, `miui-framework.jar`, `miui-services.jar`
-
-`advanced_keyboard` -> `miui-framework.jar`, `miui-services.jar`, `FrequentPhrase.apk`, `MiuiSystemUI.apk`, `Settings.apk`
-
-## Resume
-
-The pipeline writes `workspace/state/pipeline.json`. It is safe to inspect with:
-
-```bash
-python3 main.py resume
-```
+Modified APKs normally require a platform-compatible signing key. The builder deliberately does not invent or substitute a key. Provide an appropriate signing stage/key for the target ROM before distributing a modified ROM.
