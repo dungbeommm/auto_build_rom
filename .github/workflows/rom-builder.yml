@@ -32,6 +32,39 @@ jobs:
       - name: Fix script permissions
         run: chmod +x scripts/*.sh
 
+      - name: Install logical partition tools
+        shell: bash
+        run: |
+          set -Eeuo pipefail
+          mkdir -p bin/linux-x86_64
+
+          # The repository intentionally does not carry large Linux binaries.
+          # Fetch the pinned public precompiled LP tools when the checkout does
+          # not already provide them.
+          if [[ ! -x bin/linux-x86_64/lpunpack || ! -x bin/linux-x86_64/lpmake ]]; then
+            rm -rf /tmp/lp-tools
+            git clone --depth 1 --branch Linux-debian \
+              https://github.com/whyshhnuv/lpunpack-lpmake-mirror.git \
+              /tmp/lp-tools
+
+            found_unpack="$(find /tmp/lp-tools -type f -name 'lpunpack' -perm -u+x | head -n 1 || true)"
+            found_make="$(find /tmp/lp-tools -type f -name 'lpmake' -perm -u+x | head -n 1 || true)"
+
+            [[ -n "$found_unpack" ]] || { echo '::error::lpunpack binary not found in LP tools archive'; exit 1; }
+            [[ -n "$found_make" ]] || { echo '::error::lpmake binary not found in LP tools archive'; exit 1; }
+
+            install -m 0755 "$found_unpack" bin/linux-x86_64/lpunpack
+            install -m 0755 "$found_make" bin/linux-x86_64/lpmake
+          fi
+
+          ln -sf "$PWD/bin/linux-x86_64/lpunpack" /usr/local/bin/lpunpack
+          ln -sf "$PWD/bin/linux-x86_64/lpmake" /usr/local/bin/lpmake
+
+          command -v lpunpack
+          command -v lpmake
+          lpunpack --help >/dev/null 2>&1 || true
+          lpmake --help >/dev/null 2>&1 || true
+
       - name: Prepare workspace
         run: |
           set -Eeuo pipefail

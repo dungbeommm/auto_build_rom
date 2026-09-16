@@ -19,7 +19,7 @@ class RomWorkspace:
             if p.is_file(): return p
         return None
     def extract_super(self, super_img: Path) -> Path:
-        tool=require(str(self.p.root/'bin/linux-x86_64/lpunpack'),'lpunpack')
+        tool=require('lpunpack','lpunpack')
         out=self.p.partitions/'super'; out.mkdir(parents=True,exist_ok=True)
         run([tool,str(super_img),str(out)],logger=self.log)
         return out
