@@ -1,3 +1,15 @@
-import sys
-from pathlib import Path
-sys.path.insert(0, str(Path(__file__).parents[1] / 'src'))
+import logging
+from unittest.mock import MagicMock
+
+import pytest
+
+from src.core.context import RomContext
+
+
+@pytest.fixture
+def mock_context():
+    """Returns a mock RomContext."""
+    mock = MagicMock(spec=RomContext)
+    mock.is_eu_rom = False  # Default to CN port
+    mock.logger = logging.getLogger("MockContext")
+    return mock
