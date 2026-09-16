@@ -29,6 +29,9 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jre-headless zipalign android-sdk-build-tools e2fsprogs erofs-utils
+      - name: Fix script permissions
+        run: chmod +x scripts/*.sh
+
       - name: Prepare workspace
         run: |
           set -Eeuo pipefail
@@ -109,11 +112,11 @@ jobs:
           IFS=',' read -ra F <<< "$FEATURES"
           args=()
           for x in "${F[@]}"; do args+=(--feature "$x"); done
-          ./scripts/run.sh list-mods >/dev/null
+          bash ./scripts/run.sh list-mods >/dev/null
           if [ "${ROM_SOURCE:-}" = "workspace/extracted" ]; then
-            ./scripts/run.sh plan workspace/extracted "${args[@]}"
+            bash ./scripts/run.sh plan workspace/extracted "${args[@]}"
           else
-            ./scripts/run.sh plan "${ROM_SOURCE:-workspace/input/rom.zip}" "${args[@]}"
+            bash ./scripts/run.sh plan "${ROM_SOURCE:-workspace/input/rom.zip}" "${args[@]}"
           fi
       - name: Patch
         env:
@@ -128,7 +131,7 @@ jobs:
           else
             SRC="${ROM_SOURCE:-workspace/input/rom.zip}"
           fi
-          if [ "$STRICT" = "true" ]; then ./scripts/run.sh patch "$SRC" "${args[@]}"; else ./scripts/run.sh patch "$SRC" --best-effort "${args[@]}"; fi
+          if [ "$STRICT" = "true" ]; then bash ./scripts/run.sh patch "$SRC" "${args[@]}"; else bash ./scripts/run.sh patch "$SRC" --best-effort "${args[@]}"; fi
       - name: Upload workspace
         uses: actions/upload-artifact@v4
         with:
