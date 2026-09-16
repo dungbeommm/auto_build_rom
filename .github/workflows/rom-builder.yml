@@ -28,7 +28,7 @@ jobs:
       - name: System tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y openjdk-17-jre-headless zipalign android-sdk-build-tools e2fsprogs erofs-utils
+          sudo apt-get install -y openjdk-17-jre-headless zipalign android-sdk-build-tools android-sdk-libsparse-utils e2fsprogs erofs-utils
       - name: Fix script permissions
         run: chmod +x scripts/*.sh
 
@@ -62,8 +62,10 @@ jobs:
 
           command -v lpunpack
           command -v lpmake
+          command -v simg2img
           lpunpack --help >/dev/null 2>&1 || true
           lpmake --help >/dev/null 2>&1 || true
+          simg2img --help >/dev/null 2>&1 || true
 
       - name: Prepare workspace
         run: |

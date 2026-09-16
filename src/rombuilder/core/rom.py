@@ -1,5 +1,5 @@
 from __future__ import annotations
-import shutil, zipfile
+import shutil, zipfile, struct
 from pathlib import Path
 from .exec import run, require
 
@@ -18,10 +18,26 @@ class RomWorkspace:
         for p in tree.rglob('super.img'):
             if p.is_file(): return p
         return None
+    def _is_sparse_image(self, image: Path) -> bool:
+        with image.open('rb') as f:
+            header = f.read(4)
+        return len(header) == 4 and struct.unpack('<I', header)[0] == 0xED26FF3A
+
+    def _unsparse_image(self, image: Path) -> Path:
+        tool = require('simg2img', 'simg2img')
+        out = self.p.partitions / 'super.unsparse.img'
+        out.parent.mkdir(parents=True, exist_ok=True)
+        self.log.info('Sparse super.img detected; converting with simg2img')
+        run([tool, str(image), str(out)], logger=self.log)
+        if not out.is_file() or out.stat().st_size == 0:
+            raise RuntimeError(f'simg2img did not produce a valid image: {out}')
+        return out
+
     def extract_super(self, super_img: Path) -> Path:
-        tool=require('lpunpack','lpunpack')
-        out=self.p.partitions/'super'; out.mkdir(parents=True,exist_ok=True)
-        run([tool,str(super_img),str(out)],logger=self.log)
+        tool = require('lpunpack', 'lpunpack')
+        out = self.p.partitions/'super'; out.mkdir(parents=True,exist_ok=True)
+        source = self._unsparse_image(super_img) if self._is_sparse_image(super_img) else super_img
+        run([tool,str(source),str(out)],logger=self.log)
         return out
     def copy_image_partitions(self, tree: Path):
         out=self.p.partitions/'flat'; out.mkdir(parents=True,exist_ok=True)
