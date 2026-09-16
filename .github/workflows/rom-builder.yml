@@ -39,8 +39,8 @@ jobs:
           set -Eeuo pipefail
           mkdir -p bin/linux-x86_64
           curl -fL --retry 4 -o bin/linux-x86_64/apktool.jar https://github.com/iBotPeaches/Apktool/releases/download/v2.10.0/apktool_2.10.0.jar
-          curl -fL --retry 4 -o bin/linux-x86_64/baksmali.jar https://github.com/JesusFreke/smali/releases/download/v3.0.9/baksmali-3.0.9.jar
-          curl -fL --retry 4 -o bin/linux-x86_64/smali.jar https://github.com/JesusFreke/smali/releases/download/v3.0.9/smali-3.0.9.jar
+          curl -fL --retry 4 -o bin/linux-x86_64/baksmali.jar https://github.com/baksmali/smali/releases/download/3.0.9/baksmali-3.0.9-fat-release.jar
+          curl -fL --retry 4 -o bin/linux-x86_64/smali.jar https://github.com/baksmali/smali/releases/download/3.0.9/smali-3.0.9-fat-release.jar
           test -s bin/linux-x86_64/apktool.jar
           test -s bin/linux-x86_64/baksmali.jar
           test -s bin/linux-x86_64/smali.jar
