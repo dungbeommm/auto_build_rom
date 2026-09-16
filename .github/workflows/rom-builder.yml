@@ -3,7 +3,7 @@ on:
   workflow_dispatch:
     inputs:
       rom_url:
-        description: 'Direct ROM ZIP URL (optional; upload is also supported)'
+        description: 'Direct ROM archive URL (.zip/.tgz/.tar.gz; optional)'
         required: false
         type: string
       features:
@@ -29,9 +29,74 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y openjdk-17-jre-headless zipalign android-sdk-build-tools e2fsprogs erofs-utils
+      - name: Prepare workspace
+        run: |
+          set -Eeuo pipefail
+          mkdir -p \
+            workspace/input \
+            workspace/extracted \
+            workspace/super \
+            workspace/partitions \
+            workspace/logs \
+            workspace/state
+
       - name: Download ROM
         if: inputs.rom_url != ''
-        run: curl -L --fail --retry 4 -o workspace/input/rom.zip "${{ inputs.rom_url }}"
+        env:
+          ROM_URL: ${{ inputs.rom_url }}
+        run: |
+          set -Eeuo pipefail
+          mkdir -p workspace/input
+
+          # Keep the original archive type. Many Xiaomi/HyperOS factory ROMs
+          # are .tgz/.tar.gz rather than .zip.
+          case "${ROM_URL%%\?*}" in
+            *.tgz|*.tar.gz|*.tgz/|*.tar.gz/)
+              OUT=workspace/input/rom.tgz
+              ;;
+            *)
+              OUT=workspace/input/rom.zip
+              ;;
+          esac
+
+          curl \
+            --location \
+            --fail \
+            --show-error \
+            --retry 4 \
+            --retry-delay 5 \
+            --retry-all-errors \
+            --continue-at - \
+            --output "$OUT" \
+            "$ROM_URL"
+
+          test -s "$OUT"
+          echo "ROM_INPUT=$OUT" >> "$GITHUB_ENV"
+          echo "Downloaded: $OUT"
+          ls -lh "$OUT"
+
+      - name: Normalize downloaded archive
+        if: inputs.rom_url != ''
+        run: |
+          set -Eeuo pipefail
+          mkdir -p workspace/input workspace/extracted
+
+          case "$ROM_INPUT" in
+            *.tgz)
+              tar -xzf "$ROM_INPUT" -C workspace/extracted
+              ROM_SOURCE=workspace/extracted
+              ;;
+            *.zip)
+              ROM_SOURCE="$ROM_INPUT"
+              ;;
+            *)
+              echo "::error::Unsupported ROM archive: $ROM_INPUT"
+              exit 1
+              ;;
+          esac
+
+          echo "ROM_SOURCE=$ROM_SOURCE" >> "$GITHUB_ENV"
+
       - name: Run planner
         env:
           FEATURES: ${{ inputs.features }}
@@ -40,8 +105,11 @@ jobs:
           args=()
           for x in "${F[@]}"; do args+=(--feature "$x"); done
           ./scripts/run.sh list-mods >/dev/null
-          test -f workspace/input/rom.zip
-          ./scripts/run.sh plan workspace/input/rom.zip "${args[@]}"
+          if [ "${ROM_SOURCE:-}" = "workspace/extracted" ]; then
+            ./scripts/run.sh plan workspace/extracted "${args[@]}"
+          else
+            ./scripts/run.sh plan "${ROM_SOURCE:-workspace/input/rom.zip}" "${args[@]}"
+          fi
       - name: Patch
         env:
           FEATURES: ${{ inputs.features }}
@@ -50,7 +118,12 @@ jobs:
           IFS=',' read -ra F <<< "$FEATURES"
           args=()
           for x in "${F[@]}"; do args+=(--feature "$x"); done
-          if [ "$STRICT" = "true" ]; then ./scripts/run.sh patch workspace/input/rom.zip "${args[@]}"; else ./scripts/run.sh patch workspace/input/rom.zip --best-effort "${args[@]}"; fi
+          if [ "${ROM_SOURCE:-}" = "workspace/extracted" ]; then
+            SRC=workspace/extracted
+          else
+            SRC="${ROM_SOURCE:-workspace/input/rom.zip}"
+          fi
+          if [ "$STRICT" = "true" ]; then ./scripts/run.sh patch "$SRC" "${args[@]}"; else ./scripts/run.sh patch "$SRC" --best-effort "${args[@]}"; fi
       - name: Upload workspace
         uses: actions/upload-artifact@v4
         with:
